@@ -15,12 +15,14 @@ use std::{
     },
 };
 
+/// hardware interface 
 pub struct RawSocketDesc {
     lower: i32,
     ifreq: ifreq,
 }
 
 impl RawSocketDesc {
+    /// create a new device with the given interface `name`
     pub fn new(name: &str) -> io::Result<Self> {
         let protocol = ETHERCAT_ETHERTYPE as i16;
 
@@ -75,6 +77,7 @@ impl RawSocketDesc {
         Ok(())
     }
 
+    /// gets the maximum transfer unit for the hardware interface
     pub fn interface_mtu(&mut self) -> io::Result<usize> {
         ifreq_ioctl(self.lower, &mut self.ifreq, libc::SIOCGIFMTU).map(|mtu| mtu as usize)
     }

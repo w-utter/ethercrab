@@ -107,6 +107,7 @@ std = [
 ]
 xdp = ["dep:xsk-rs"]
 serde = ["dep:serde", "bitflags/serde"]
+raw-sockets = []
 
 # [[example]]
 # name = "akd"

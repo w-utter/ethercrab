@@ -89,6 +89,7 @@ macro_rules! try_ioctl {
 }
 
 #[derive(Debug)]
+/// device associated with a Berkeley Packet Filter
 pub struct BpfDevice {
     /// Interface file handle.
     fd: libc::c_int,
@@ -130,6 +131,7 @@ fn open_device() -> io::Result<libc::c_int> {
 }
 
 impl BpfDevice {
+    /// create a new BPF device with the given interface `name`
     pub fn new(name: &str) -> io::Result<Self> {
         let mut self_ = BpfDevice {
             fd: open_device()?,
@@ -144,6 +146,7 @@ impl BpfDevice {
     }
 
     #[allow(trivial_casts)]
+    /// binds the hardware interface associated with the device
     pub fn bind_interface(&mut self) -> io::Result<()> {
         let mut bufsize: libc::c_int = 1;
 
@@ -183,6 +186,7 @@ impl BpfDevice {
         Ok(bufsize as usize)
     }
 
+    /// get the MAC address associated with this hardware interface
     pub fn mac(&self) -> io::Result<Option<EthernetAddress>> {
         Ok(nix::ifaddrs::getifaddrs()?
             .find(|iface| iface.interface_name == self.name)

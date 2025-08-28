@@ -6,9 +6,9 @@ mod bpf;
 mod linux;
 
 #[cfg(all(not(target_os = "linux"), unix))]
-use self::bpf::BpfDevice as RawSocketDesc;
+pub use self::bpf::BpfDevice as RawSocketDesc;
 #[cfg(target_os = "linux")]
-pub(in crate::std) use self::linux::RawSocketDesc;
+pub use self::linux::RawSocketDesc;
 
 use crate::{
     error::Error,

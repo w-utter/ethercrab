@@ -9,6 +9,7 @@ mod windows;
 #[cfg(all(target_os = "linux", feature = "xdp"))]
 mod xdp;
 
+#[cfg(target_os = "linux")]
 use std::{
     sync::Arc,
     task::Wake,
@@ -19,16 +20,20 @@ use std::{
 pub use self::windows::{TxRxTaskConfig, ethercat_now, tx_rx_task_blocking};
 #[cfg(unix)]
 pub use unix::{ethercat_now, tx_rx_task};
+#[cfg(all(unix, feature = "raw-sockets"))]
+pub use unix::RawSocketDesc;
 // io_uring is Linux-only
 #[cfg(target_os = "linux")]
 pub use io_uring::tx_rx_task_io_uring;
 #[cfg(all(target_os = "linux", feature = "xdp"))]
 pub use xdp::tx_rx_task_xdp;
 
+#[cfg(target_os = "linux")]
 struct ParkSignal {
     current_thread: Thread,
 }
 
+#[cfg(target_os = "linux")]
 impl ParkSignal {
     fn new() -> Self {
         Self {
@@ -45,6 +50,7 @@ impl ParkSignal {
     // }
 }
 
+#[cfg(target_os = "linux")]
 impl Wake for ParkSignal {
     fn wake(self: Arc<Self>) {
         self.current_thread.unpark();
