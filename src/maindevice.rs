@@ -418,6 +418,11 @@ impl<'sto> MainDevice<'sto> {
             .await
     }
 
+    /// Count the number of SubDevices on the network.
+    pub fn count_subdevices_io_uring(&self) -> Result<Option<(crate::SendableFrame<'_>, crate::pdu_loop::frame_element::created_frame::PduResponseHandle)>, Error> {
+        Command::brd(RegisterAddress::Type.into()).prep_sized::<u8>(self)
+    }
+
     /// Get the number of discovered SubDevices in the EtherCAT network.
     ///
     /// As [`init`](crate::MainDevice::init) runs SubDevice autodetection, it must be called before this
@@ -509,6 +514,41 @@ impl<'sto> MainDevice<'sto> {
 
         frame.await?.first_pdu(handle)
     }
+
+    /// TODO: check to see if this works.
+    /// this also means that all commands need to have a sync variant
+    /// after, the SendableFrame should be implemented the same as it is in the driver
+    ///
+    /// this function is analogous to `single_pdu` for async
+    pub(crate) fn prep_send_frame(
+        &'sto self,
+        command: Command,
+        data: impl EtherCrabWireWrite,
+        len_override: Option<u16>,
+    ) -> Result<Option<(crate::SendableFrame<'sto>, crate::pdu_loop::frame_element::created_frame::PduResponseHandle)>, Error> {
+        let mut frame = self.pdu_loop.alloc_frame()?;
+        let handle = frame.push_pdu(command, data, len_override)?;
+
+        crate::pdu_loop::frame_header::EthercatFrameHeader::pdu(frame.inner.pdu_payload_len() as u16)
+            .pack_to_slice_unchecked(frame.inner.ecat_frame_header_mut());
+
+        frame.inner.set_state(crate::pdu_loop::frame_element::FrameState::Sendable);
+
+        let frame_element = unsafe { frame.inner.frame.as_ref() };
+        let frame_idx = frame_element.storage_slot_index;
+
+        let frame = self.pdu_loop.storage.frame_at_index(usize::from(frame_idx));
+
+        let frame = crate::SendableFrame::claim_sending(frame, self.pdu_loop.storage.pdu_idx, self.pdu_loop.storage.frame_data_len);
+
+        Ok(frame.map(|frame| (frame, handle)))
+    }
+
+
+
+
+
+
 
     /// Release the [`PduLoop`] storage **without** resetting it.
     ///

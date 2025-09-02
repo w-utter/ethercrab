@@ -21,8 +21,8 @@ use super::FIRST_PDU_EMPTY;
 /// Frame data common to all typestates.
 #[derive(Copy, Clone)]
 pub struct FrameBox<'sto> {
-    frame: NonNull<FrameElement<0>>,
-    pdu_idx: &'sto AtomicU8,
+    pub(crate) frame: NonNull<FrameElement<0>>,
+    pub(crate) pdu_idx: &'sto AtomicU8,
     max_len: usize,
     _lifetime: PhantomData<&'sto mut FrameElement<0>>,
 }

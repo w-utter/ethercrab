@@ -134,4 +134,13 @@ impl WrappedRead {
     ) -> impl core::future::Future<Output = Result<ReceivedPdu<'maindevice>, Error>> {
         maindevice.single_pdu(self.command.into(), (), Some(len))
     }
+
+    pub(crate) fn prep<'maindevice>(&self, maindevice: &'maindevice MainDevice<'maindevice>, len: u16,) -> Result<Option<(crate::SendableFrame<'maindevice>, crate::pdu_loop::frame_element::created_frame::PduResponseHandle)>, Error> {
+
+        maindevice.prep_send_frame(self.command.into(), (), Some(len))
+    }
+
+    pub(crate) fn prep_sized<'maindevice, T: EtherCrabWireSized>(&self, maindevice: &'maindevice MainDevice<'maindevice>) -> Result<Option<(crate::SendableFrame<'maindevice>, crate::pdu_loop::frame_element::created_frame::PduResponseHandle)>, Error> {
+        self.prep(maindevice, T::PACKED_LEN as u16)
+    }
 }

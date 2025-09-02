@@ -21,7 +21,7 @@ use ethercrab_wire::{
 /// [`alloc_frame`](crate::pdu_loop::storage::PduStorageRef::alloc_frame).
 #[derive(Debug)]
 pub struct CreatedFrame<'sto> {
-    inner: FrameBox<'sto>,
+    pub(crate) inner: FrameBox<'sto>,
     pdu_count: u8,
     /// Position of the last frame's header in the payload.
     ///
@@ -35,7 +35,7 @@ impl<'sto> CreatedFrame<'sto> {
     /// Includes header and 2 bytes for working counter.
     pub const PDU_OVERHEAD_BYTES: usize = PduHeader::PACKED_LEN + 2;
 
-    pub(in crate::pdu_loop) fn claim_created(
+    pub(crate) fn claim_created(
         frame: NonNull<FrameElement<0>>,
         frame_index: u8,
         pdu_idx: &'sto AtomicU8,
@@ -348,6 +348,8 @@ impl Drop for CreatedFrame<'_> {
 // a 'static bound.
 unsafe impl Send for CreatedFrame<'_> {}
 
+// the handle should not allowed to be copied.
+#[allow(missing_copy_implementations)]
 #[derive(Debug)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
 pub struct PduResponseHandle {

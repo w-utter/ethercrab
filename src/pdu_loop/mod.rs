@@ -1,5 +1,5 @@
-mod frame_element;
-mod frame_header;
+pub(crate) mod frame_element;
+pub(crate) mod frame_header;
 mod pdu_flags;
 mod pdu_header;
 mod pdu_rx;
@@ -52,7 +52,7 @@ pub use frame_element::sendable_frame::SendableFrame;
 // ```
 #[derive(Debug)]
 pub struct PduLoop<'sto> {
-    storage: PduStorageRef<'sto>,
+    pub(crate) storage: PduStorageRef<'sto>,
 }
 
 impl<'sto> PduLoop<'sto> {

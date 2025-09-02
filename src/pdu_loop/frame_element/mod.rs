@@ -74,7 +74,7 @@ pub enum FrameState {
 #[repr(C)]
 pub struct FrameElement<const N: usize> {
     /// Ethernet frame index in storage. Has nothing to do with PDU header index field.
-    storage_slot_index: u8,
+    pub(crate) storage_slot_index: u8,
     status: AtomicFrameState,
     waker: AtomicWaker,
 
