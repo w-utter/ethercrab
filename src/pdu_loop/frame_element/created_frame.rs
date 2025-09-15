@@ -78,6 +78,10 @@ impl<'sto> CreatedFrame<'sto> {
 
         self.inner.set_state(FrameState::Sendable);
 
+        let data = self.inner.pdu_buf();
+        let data = &data[..self.inner.pdu_payload_len()];
+        println!("sending frame data: {:02x?}", data);
+
         ReceiveFrameFut {
             frame: Some(self.inner),
             pdu_loop,
@@ -352,13 +356,16 @@ unsafe impl Send for CreatedFrame<'_> {}
 #[allow(missing_copy_implementations)]
 #[derive(Debug)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
+/// handle to a created pdu
 pub struct PduResponseHandle {
     // Might want this in the future
     #[allow(unused)]
+    /// pdu index in frame
     pub index_in_frame: u8,
 
     /// PDU wire index and command used to validate response match.
     pub pdu_idx: u8,
+    /// command code associated with this pdu
     pub command_code: u8,
 
     /// The number of bytes allocated for the PDU header, payload and WKC in the frame.

@@ -8,7 +8,9 @@ use core::fmt::Display;
 #[wire(bytes = 16)]
 pub struct SdoExpeditedDownload {
     #[wire(bytes = 12)]
+    /// TODO: docs
     pub headers: SdoNormal,
+    /// TODO: docs
     #[wire(bytes = 4)]
     pub data: [u8; 4],
 }
@@ -40,8 +42,10 @@ impl Display for SdoExpeditedDownload {
 #[wire(bytes = 12)]
 pub struct SdoNormal {
     #[wire(bytes = 8)]
+    /// TODO: docs
     pub header: MailboxHeader,
     #[wire(bytes = 4)]
+    /// TODO: docs
     pub sdo_header: InitSdoHeader,
 }
 
@@ -68,8 +72,10 @@ impl Display for SdoNormal {
 #[wire(bytes = 9)]
 pub struct SdoSegmented {
     #[wire(bytes = 8)]
+    /// TODO: docs
     pub header: MailboxHeader,
     #[wire(bytes = 1)]
+    /// TODO: docs
     pub sdo_header: SegmentSdoHeader,
 }
 
@@ -86,10 +92,13 @@ impl Display for SdoSegmented {
 #[wire(bytes = 14)]
 pub struct ObjectDescriptionListRequest {
     #[wire(bytes = 8)]
+    /// TODO: docs
     pub mailbox: MailboxHeader,
     #[wire(bytes = 4)]
+    /// TODO: docs
     pub sdo_info_header: SdoInfoHeader,
     #[wire(bytes = 2)]
+    /// TODO: docs
     pub list_type: ObjectDescriptionListQueryInner,
 }
 
@@ -98,8 +107,10 @@ pub struct ObjectDescriptionListRequest {
 #[wire(bytes = 12)]
 pub struct ObjectDescriptionListResponse {
     #[wire(bytes = 8)]
+    /// TODO: docs
     pub mailbox: MailboxHeader,
     #[wire(bytes = 4)]
+    /// TODO: docs
     pub sdo_info_header: SdoInfoHeader,
 }
 
@@ -208,6 +219,7 @@ impl core::fmt::Display for ObjectDescriptionListQuery {
 pub trait CoeServiceRequest:
     ethercrab_wire::EtherCrabWireReadWrite + ethercrab_wire::EtherCrabWireWriteSized
 {
+    /// TODO: docs
     fn validate_response(&self, received_index: u16, received_subindex: u8) -> bool;
 }
 
@@ -231,6 +243,7 @@ impl CoeServiceRequest for SdoSegmented {
     }
 }
 
+    /// TODO: docs
 pub fn download(
     counter: u8,
     index: u16,
@@ -262,6 +275,7 @@ pub fn download(
     }
 }
 
+    /// TODO: docs
 pub fn upload_segmented(counter: u8, toggle: bool) -> SdoSegmented {
     SdoSegmented {
         header: MailboxHeader {
@@ -282,6 +296,7 @@ pub fn upload_segmented(counter: u8, toggle: bool) -> SdoSegmented {
     }
 }
 
+    /// TODO: docs
 pub fn upload(counter: u8, index: u16, access: SubIndex) -> SdoNormal {
     SdoNormal {
         header: MailboxHeader {
@@ -304,6 +319,7 @@ pub fn upload(counter: u8, index: u16, access: SubIndex) -> SdoNormal {
     }
 }
 
+    /// TODO: docs
 pub fn get_object_description_list(
     counter: u8,
     list_type: ObjectDescriptionListQuery,
@@ -326,6 +342,7 @@ pub fn get_object_description_list(
     }
 }
 
+    /// TODO: docs
 pub fn get_object_quantities(counter: u8) -> ObjectDescriptionListRequest {
     ObjectDescriptionListRequest {
         mailbox: MailboxHeader {

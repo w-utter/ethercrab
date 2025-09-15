@@ -47,6 +47,7 @@ impl Topology {
 
 #[derive(Default, Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+/// ports to receive dc frames
 pub struct Ports(pub [Port; 4]);
 
 impl core::fmt::Display for Ports {
@@ -68,7 +69,8 @@ impl core::fmt::Display for Ports {
 }
 
 impl Ports {
-    pub(crate) fn new(active0: bool, active3: bool, active1: bool, active2: bool) -> Self {
+    /// create from active ports
+    pub fn new(active0: bool, active3: bool, active1: bool, active2: bool) -> Self {
         Self([
             Port {
                 active: active0,
@@ -94,7 +96,7 @@ impl Ports {
     }
 
     /// Set port DC receive times, given in EtherCAT port order 0 -> 3 -> 1 -> 2
-    pub(crate) fn set_receive_times(
+    pub fn set_receive_times(
         &mut self,
         time_p0: u32,
         time_p3: u32,
@@ -143,7 +145,7 @@ impl Ports {
     }
 
     /// Get the last open port.
-    pub fn last_port(&self) -> Option<&Port> {
+    pub(crate) fn last_port(&self) -> Option<&Port> {
         self.active_ports().last()
     }
 
@@ -165,7 +167,7 @@ impl Ports {
     }
 
     /// Link a downstream device to the current device using the next open port from the entry port.
-    pub fn assign_next_downstream_port(
+    pub(crate) fn assign_next_downstream_port(
         &mut self,
         downstream_subdevice_index: NonZeroU16,
     ) -> Option<u8> {
@@ -179,12 +181,12 @@ impl Ports {
     }
 
     /// Find the port assigned to the given SubDevice.
-    pub fn port_assigned_to(&self, subdevice: &SubDevice) -> Option<&Port> {
+    pub(crate) fn port_assigned_to(&self, subdevice: &SubDevice) -> Option<&Port> {
         self.active_ports()
             .find(|port| port.downstream_to.map(|idx| idx.get()) == Some(subdevice.index))
     }
 
-    pub fn topology(&self) -> Topology {
+    pub(crate) fn topology(&self) -> Topology {
         match self.open_ports() {
             1 => Topology::LineEnd,
             2 => Topology::Passthrough,
@@ -194,7 +196,8 @@ impl Ports {
         }
     }
 
-    pub fn is_last_port(&self, port: &Port) -> bool {
+    /// is last port
+    pub(crate) fn is_last_port(&self, port: &Port) -> bool {
         self.last_port().filter(|p| *p == port).is_some()
     }
 

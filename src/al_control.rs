@@ -19,7 +19,7 @@ pub struct AlControl {
 }
 
 impl AlControl {
-    pub fn new(state: SubDeviceState) -> Self {
+    pub(crate) fn new(state: SubDeviceState) -> Self {
         Self {
             state,
             error: false,
@@ -27,7 +27,7 @@ impl AlControl {
         }
     }
 
-    pub fn reset() -> Self {
+    pub(crate) fn reset() -> Self {
         Self {
             state: SubDeviceState::Init,
             // Acknowledge error

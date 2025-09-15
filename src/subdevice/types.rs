@@ -55,20 +55,29 @@ pub struct SubDeviceConfig {
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct MailboxConfig {
-    pub(in crate::subdevice) read: Option<Mailbox>,
-    pub(in crate::subdevice) write: Option<Mailbox>,
-    pub(in crate::subdevice) supported_protocols: MailboxProtocols,
-    pub(in crate::subdevice) coe_sync_manager_types: heapless::Vec<SyncManagerType, 16>,
-    pub(in crate::subdevice) has_coe: bool,
+    /// TODO: docs
+    pub read: Option<Mailbox>,
+    /// TODO: docs
+    pub write: Option<Mailbox>,
+    /// TODO: docs
+    pub supported_protocols: MailboxProtocols,
+    /// TODO: docs
+    pub coe_sync_manager_types: heapless::Vec<SyncManagerType, 16>,
+    /// TODO: docs
+    pub has_coe: bool,
     /// True if Complete Access is supported.
-    pub(in crate::subdevice) complete_access: bool,
+    pub complete_access: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
+/// mbx to the subdevice
 pub struct Mailbox {
-    pub(in crate::subdevice) address: u16,
-    pub(in crate::subdevice) len: u16,
-    pub(in crate::subdevice) sync_manager: u8,
+    /// addr
+    pub address: u16,
+    /// size
+    pub len: u16,
+    /// associated sync manager idx
+    pub sync_manager: u8,
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]

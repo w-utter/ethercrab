@@ -5,6 +5,46 @@ pub mod pdi;
 pub mod ports;
 mod types;
 
+/// A super generalised version of the various header shapes for responses, extracting only
+/// what we need in this method.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ethercrab_wire::EtherCrabWireRead)]
+#[wire(bytes = 12)]
+struct HeadersRaw {
+    #[wire(bytes = 8)]
+    header: MailboxHeader,
+
+    #[wire(pre_skip = 5, bits = 3)]
+    command: CoeCommand,
+
+    // 9 bytes up to here
+
+    // SAFETY: These fields will be garbage (but not invalid) if the response is NOT an
+    // abort transfer request. Use with caution!
+    #[wire(bytes = 2)]
+    address: u16,
+    #[wire(bytes = 1)]
+    sub_index: u8,
+}
+
+/// emergency related info
+#[derive(Debug, Copy, Clone, ethercrab_wire::EtherCrabWireRead)]
+#[wire(bytes = 8)]
+struct EmergencyData {
+    #[wire(bytes = 2)]
+    error_code: u16,
+    #[wire(bytes = 1)]
+    error_register: u8,
+    #[wire(bytes = 5)]
+    extra_data: [u8; 5],
+}
+
+/// error response when parsing a coe msg
+#[derive(Debug, Clone, Copy)]
+pub enum ErrorResponse {
+    Emergency(EmergencyData),
+    Abort(CoeAbortCode),
+}
+
 use crate::{
     WrappedRead, WrappedWrite,
     al_control::AlControl,
@@ -41,7 +81,7 @@ use ethercrab_wire::{
 pub use self::pdi::SubDevicePdi;
 pub use self::types::IoRanges;
 pub use self::types::SubDeviceIdentity;
-use self::{eeprom::SubDeviceEeprom, types::Mailbox};
+pub use self::{eeprom::SubDeviceEeprom, types::Mailbox};
 pub use coe::{ObjectDescriptionListQuery, ObjectDescriptionListQueryCounts};
 pub use dc::DcSync;
 
@@ -57,7 +97,8 @@ pub struct SubDevice {
 
     pub(crate) alias_address: u16,
 
-    pub(crate) config: SubDeviceConfig,
+    /// config
+    pub config: SubDeviceConfig,
 
     pub(crate) identity: SubDeviceIdentity,
 
@@ -65,7 +106,8 @@ pub struct SubDevice {
     pub(crate) name: heapless::String<64>,
 
     // pub(crate) flags: SupportFlags,
-    pub(crate) ports: Ports,
+    /// ports associated with the subdevice
+    pub ports: Ports,
 
     pub(crate) dc_support: DcSupport,
 
@@ -235,6 +277,27 @@ impl SubDevice {
         })
     }
 
+    /// create a subdevice from known properties
+    pub fn new_from_io_uring(configured_address: u16, alias_address: u16, index: u16, identity: SubDeviceIdentity, name: heapless::String<64>, flags: SupportFlags, ports: Ports) -> Self {
+
+        Self {
+            configured_address,
+            alias_address,
+            config: SubDeviceConfig::default(),
+            index,
+            parent_index: None,
+            propagation_delay: 0,
+            dc_receive_time: 0,
+            identity,
+            name,
+            dc_support: flags.dc_support(),
+            ports,
+            dc_sync: DcSync::Disabled,
+            // 0 is a reserved value, so we initialise the cycle at 1. The cycle repeats 1 - 7.
+            mailbox_counter: AtomicU8::new(1),
+        }
+    }
+
     /// Get the SubDevice's human readable short name.
     ///
     /// To get a longer, more descriptive name, use [`SubDevice::description`].
@@ -385,6 +448,11 @@ impl SubDevice {
         Ok(())
     }
 
+    /// set the dc receive time of this device in nanoseconds
+    pub fn set_dc_receive_time(&mut self, dc_receive_time: u64) {
+        self.dc_receive_time = dc_receive_time
+    }
+
     /// Get the network propagation delay of this device in nanoseconds.
     ///
     /// Note that before [`MainDevice::init`](crate::MainDevice::init) is called, this method will
@@ -424,6 +492,89 @@ impl SubDevice {
             parent_port.is_some_and(|child_port| parent.ports.is_last_port(child_port));
 
         parent_is_fork && !child_attached_to_last_parent_port
+    }
+
+    /// TODO: docs
+    pub fn mailbox_counter(&self) -> u8 {
+        fmt::unwrap!(self.mailbox_counter.fetch_update(
+                Ordering::Relaxed,
+                Ordering::Acquire,
+                |n| {
+                    if n >= 7 {
+                        Some(1)
+                    } else {
+                        Some(n + 1)
+                    }
+                }
+                ))
+    }
+
+    /// parse coe responses based on bytes
+    pub fn parse_coe_service_reponse<'a, R: CoeServiceRequest>(mut bytes: ReceivedPdu<'a>, request: &R) -> Result<(R, ReceivedPdu<'a>), Error> {
+        let headers = HeadersRaw::unpack_from_slice(&*bytes)?;
+
+        assert_ne!(headers.header.service, CoeService::Emergency);
+
+        if headers.header.service == CoeService::Emergency {
+            let bytes = &bytes[HeadersRaw::PACKED_LEN..];
+            let decoded = EmergencyData::unpack_from_slice(bytes)?;
+
+            #[cfg(not(feature = "defmt"))]
+            fmt::error!(
+                "Mailbox emergency code {:#06x}, register {:#04x}, data {:#04x?}",
+                decoded.error_code,
+                decoded.error_register,
+                decoded.extra_data
+            );
+            #[cfg(feature = "defmt")]
+            fmt::error!(
+                "Mailbox emergency code {:#06x}, register {:#04x}, data {=[u8]}",
+                decoded.error_code,
+                decoded.error_register,
+                decoded.extra_data
+            );
+
+            Err(Error::Mailbox(MailboxError::Emergency {
+                error_code: decoded.error_code,
+                error_register: decoded.error_register,
+            }))
+        } else if headers.command == CoeCommand::Abort {
+            let bytes = &bytes[HeadersRaw::PACKED_LEN..];
+            // ETG 1000.6 §5.6.2.7.1 Table 40
+            let code = CoeAbortCode::unpack_from_slice(bytes)?;
+
+            fmt::error!(
+                "Mailbox error for SubDevice: {}",
+                code
+            );
+
+            Err(Error::Mailbox(MailboxError::Aborted {
+                code,
+                address: headers.address,
+                sub_index: headers.sub_index,
+            }))
+        }
+        // Validate that the mailbox response is to the request we just sent
+        else if headers.header.mailbox_type != MailboxType::Coe
+            || !request.validate_response(headers.address, headers.sub_index)
+        {
+            fmt::error!(
+                "Invalid SDO response. Type: {:?} (expected {:?}), index {}, subindex {}",
+                headers.header.mailbox_type,
+                MailboxType::Coe,
+                headers.address,
+                headers.sub_index,
+            );
+
+            Err(Error::Mailbox(MailboxError::SdoResponseInvalid {
+                address: headers.address,
+                sub_index: headers.sub_index,
+            }))
+        } else {
+            let headers = R::unpack_from_slice(&*bytes)?;
+            bytes.trim_front(HeadersRaw::PACKED_LEN);
+            Ok((headers, bytes))
+        }
     }
 }
 
@@ -678,42 +829,12 @@ where
 
         let mut response = self.coe_response(&read_mailbox).await?;
 
-        /// A super generalised version of the various header shapes for responses, extracting only
-        /// what we need in this method.
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, ethercrab_wire::EtherCrabWireRead)]
-        #[wire(bytes = 12)]
-        struct HeadersRaw {
-            #[wire(bytes = 8)]
-            header: MailboxHeader,
-
-            #[wire(pre_skip = 5, bits = 3)]
-            command: CoeCommand,
-
-            // 9 bytes up to here
-
-            // SAFETY: These fields will be garbage (but not invalid) if the response is NOT an
-            // abort transfer request. Use with caution!
-            #[wire(bytes = 2)]
-            address: u16,
-            #[wire(bytes = 1)]
-            sub_index: u8,
-        }
 
         let headers = HeadersRaw::unpack_from_slice(&response)?;
 
         assert_ne!(headers.header.service, CoeService::Emergency);
 
         if headers.header.service == CoeService::Emergency {
-            #[derive(Debug, Copy, Clone, ethercrab_wire::EtherCrabWireRead)]
-            #[wire(bytes = 8)]
-            struct EmergencyData {
-                #[wire(bytes = 2)]
-                error_code: u16,
-                #[wire(bytes = 1)]
-                error_register: u8,
-                #[wire(bytes = 5)]
-                extra_data: [u8; 5],
-            }
 
             response.trim_front(HeadersRaw::PACKED_LEN);
 
@@ -780,6 +901,7 @@ where
             Ok((headers, response))
         }
     }
+
 
     /// Handle submitting to mailboxes for the SDO Information service.
     ///
@@ -1184,7 +1306,8 @@ where
 
 // General impl with no bounds
 impl<'maindevice, S> SubDeviceRef<'maindevice, S> {
-    pub(crate) fn new(
+    /// create new subdev
+    pub fn new(
         maindevice: &'maindevice MainDevice<'maindevice>,
         configured_address: u16,
         state: S,

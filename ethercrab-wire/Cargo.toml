@@ -15,7 +15,7 @@ rust-version = "1.79"
 [dependencies]
 defmt = { version = "0.3.5", optional = true }
 ethercrab-wire-derive = { version = "0.2.0", path = "../ethercrab-wire-derive" }
-heapless = { version = "0.8.0", default-features = false }
+heapless = { version = "0.9.0", default-features = false }
 
 [features]
 std = []

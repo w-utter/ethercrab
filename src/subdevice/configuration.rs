@@ -594,9 +594,12 @@ where
     }
 }
 
+///TODO: doc
 #[derive(Copy, Clone)]
 pub enum PdoDirection {
+    ///TODO: doc
     MasterRead,
+    ///TODO: doc
     MasterWrite,
 }
 

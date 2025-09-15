@@ -282,7 +282,7 @@ pub enum PortType {
 /// Features supported by a SubDevice.
 ///
 /// Described in ETG1000.4 Table 31 - DL information.
-#[derive(Default, Clone, Debug, PartialEq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(not(test), derive(ethercrab_wire::EtherCrabWireRead))]
 #[cfg_attr(
     test,
@@ -290,10 +290,13 @@ pub enum PortType {
 )]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[wire(bytes = 2)]
+/// flags for supported modes 
 pub struct SupportFlags {
     #[wire(bits = 1)]
+    /// support for bit ops
     pub fmmu_supports_bit_ops: bool,
     #[wire(bits = 1)]
+    /// support for reserved registers
     pub reserved_register_support: bool,
     /// This parameter is set to 1 if at least distributed clock receive times are supported.
     ///
@@ -301,14 +304,19 @@ pub struct SupportFlags {
     #[wire(bits = 1)]
     pub dc_supported: bool,
     #[wire(bits = 1)]
+    /// 64 bits of dc
     pub has_64bit_dc: bool,
     #[wire(bits = 1)]
+    /// low jitter
     pub low_jitter: bool,
     #[wire(bits = 1)]
+    /// better link detection on bus
     pub ebus_enhanced_link_detection: bool,
     #[wire(bits = 1)]
+    /// better link detection on bus
     pub mii_enhanced_link_detection: bool,
     #[wire(bits = 1)]
+    /// more error handling
     pub separate_fcs_error_handling: bool,
     /// Indicates whether registers `0x0981` - `0x0984` are usable.
     ///
@@ -318,14 +326,18 @@ pub struct SupportFlags {
     #[wire(bits = 1)]
     pub enhanced_dc_sync: bool,
     #[wire(bits = 1)]
+    /// lrw not supported
     pub lrw_not_supported: bool,
     #[wire(bits = 1)]
+    /// reads not supported
     pub brw_aprw_fprw_not_supported: bool,
     #[wire(bits = 1, post_skip = 4)]
+    /// special fmmu
     pub special_fmmu: bool,
 }
 
 impl SupportFlags {
+    /// dc support
     pub fn dc_support(&self) -> DcSupport {
         if !self.dc_supported {
             DcSupport::None

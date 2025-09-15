@@ -111,6 +111,39 @@ async fn write_dc_parameters(
     Ok(())
 }
 
+fn prep_write_dc_parameters(
+    maindevice: &MainDevice<'_>,
+    subdevice: &SubDevice,
+    dc_system_time: u64,
+    now_nanos: u64,
+    mut f: impl FnMut(Result<Option<(SendableFrame, PduResponseHandle)>, Error>
+, u16) -> Result<(), Error>,
+    id: u16,
+    ) -> Result<(), Error> {
+    let system_time_offset = -(subdevice.dc_receive_time as i64) + now_nanos as i64;
+
+    fmt::trace!(
+        "Setting SubDevice {:#06x} system time offset to {} ns (system time is {} ns, DC receive time is {}, now is {} ns)",
+        subdevice.configured_address(),
+        system_time_offset,
+        dc_system_time,
+        subdevice.dc_receive_time,
+        now_nanos
+    );
+
+    let cmd = Command::fpwr(subdevice.configured_address(),RegisterAddress::DcSystemTimeOffset.into());
+    let cmd = maindevice.prep_send_frame(cmd.into(), system_time_offset, cmd.len_override);
+
+    f(cmd, id)?;
+
+    let cmd = Command::fpwr(subdevice.configured_address(), RegisterAddress::DcSystemTimeTransmissionDelay.into());
+    let cmd = maindevice.prep_send_frame(cmd.into(), subdevice.propagation_delay, cmd.len_override);
+    f(cmd, id)?;
+
+    Ok(())
+}
+
+
 /// Find the SubDevice parent device in the list of SubDevices before it in the linear topology.
 ///
 /// # Implementation detail
@@ -454,6 +487,44 @@ pub(crate) async fn configure_dc<'subdevices>(
 
     Ok(first_dc_subdevice)
 }
+use crate::{SendableFrame, PduResponseHandle};
+
+pub(crate) fn prep_configure_dc<'subdevices>(
+    maindevice: &MainDevice<'_>,
+    subdevices: &'subdevices mut [SubDevice],
+    now: impl Fn() -> u64,
+    mut f: impl FnMut(Result<Option<(SendableFrame, PduResponseHandle)>, Error>
+, u16) -> Result<(), Error>) -> Result<Option<usize>, Error> {
+    assign_parent_relationships(subdevices)?;
+
+    let first_dc_subdevice_idx = subdevices
+        .iter()
+        .position(|subdevice| subdevice.dc_support().any());
+
+    if let Some(first_dc_subdevice_idx) = first_dc_subdevice_idx {
+        let now_nanos = now();
+        let first_dc_subdevice = subdevices.get(first_dc_subdevice_idx).unwrap();
+
+        for (id, subdevice) in subdevices.iter().enumerate().filter(|(_, sl)| sl.dc_support().any()) {
+            prep_write_dc_parameters(
+                maindevice,
+                subdevice,
+                first_dc_subdevice.dc_receive_time,
+                now_nanos,
+                &mut f,
+                id as u16,
+            )?;
+        }
+    } else {
+        fmt::debug!("No SubDevices with DC support found");
+    }
+    fmt::debug!("Distributed clock config complete");
+
+    Ok(first_dc_subdevice_idx)
+}
+
+
+
 
 /// Static drift compensation: send `iterations` FRMW frames to synchronise the network with the
 /// reference clock in the designated DC SubDevice.

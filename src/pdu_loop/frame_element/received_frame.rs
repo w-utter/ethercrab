@@ -18,6 +18,20 @@ pub struct ReceivedFrame<'sto> {
     pub(in crate::pdu_loop::frame_element) inner: FrameBox<'sto>,
 }
 
+use crate::pdu_loop::frame_element::receiving_frame::ReceivingFrame;
+
+impl <'sto> From<ReceivingFrame<'sto>> for ReceivedFrame<'sto> {
+    fn from(f: ReceivingFrame<'sto>) -> Self {
+        let inner = f.inner;
+
+        inner.swap_state(FrameState::RxDone, FrameState::RxProcessing);
+
+        Self {
+            inner,
+        }
+    }
+}
+
 impl<'sto> ReceivedFrame<'sto> {
     pub(in crate::pdu_loop) fn new(inner: FrameBox<'sto>) -> ReceivedFrame<'sto> {
         Self { inner }
@@ -39,6 +53,7 @@ impl<'sto> ReceivedFrame<'sto> {
         f
     }
 
+    /// first pdu with the handle
     pub fn first_pdu(self, handle: PduResponseHandle) -> Result<ReceivedPdu<'sto>, Error> {
         let buf = self.inner.pdu_buf();
 
@@ -84,6 +99,7 @@ impl<'sto> ReceivedFrame<'sto> {
 
     // Might want this in the future
     #[allow(unused)]
+    /// first pdu with the handle
     pub fn pdu<'pdu>(&'sto self, handle: PduResponseHandle) -> Result<ReceivedPdu<'pdu>, Error>
     where
         'sto: 'pdu,
@@ -141,8 +157,17 @@ impl<'sto> ReceivedFrame<'sto> {
         })
     }
 
+    /// iterate over all pdus in the frame
     pub fn into_pdu_iter(self) -> ReceivedPduIter<'sto> {
         ReceivedPduIter {
+            frame: self,
+            buf_pos: 0,
+        }
+    }
+
+    /// iterate over all pdus in the frame, with additional header info
+    pub fn into_pdu_iter_with_headers(self) -> ReceivedPduIterWithHeaders<'sto> {
+        ReceivedPduIterWithHeaders {
             frame: self,
             buf_pos: 0,
         }
@@ -164,6 +189,7 @@ impl Drop for ReceivedFrame<'_> {
 }
 
 // NOTE: Takes ownership of frame so we can't do double reads with handles
+/// iter for all pdus in a received frame
 pub struct ReceivedPduIter<'sto> {
     frame: ReceivedFrame<'sto>,
     buf_pos: usize,
@@ -228,25 +254,96 @@ impl<'sto> Iterator for ReceivedPduIter<'sto> {
     }
 }
 
+/// iter for all pdus in a received frame
+pub struct ReceivedPduIterWithHeaders<'sto> {
+    frame: ReceivedFrame<'sto>,
+    buf_pos: usize,
+}
+
+impl<'sto> Iterator for ReceivedPduIterWithHeaders<'sto> {
+    type Item = Result<(ReceivedPdu<'sto>, PduHeader), Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Mostly used in tests, but this check will ensure the frame actually has a PDU in it
+        if self.frame.inner.pdu_payload_len() == 0 {
+            return None;
+        }
+
+        let buf = self.frame.inner.pdu_buf().get(self.buf_pos..)?;
+
+        let pdu_header = match PduHeader::unpack_from_slice(buf) {
+            Ok(h) => h,
+            Err(e) => return Some(Err(e.into())),
+        };
+
+        let payload_len = usize::from(pdu_header.flags.len());
+        let this_pdu_len = PduHeader::PACKED_LEN + payload_len + 2;
+
+        // If buffer isn't long enough to hold payload and WKC, this is probably a corrupt PDU or
+        // someone is committing epic haxx.
+        if buf.len() < payload_len + 2 {
+            return Some(Err(Error::Pdu(PduError::TooLong)));
+        }
+
+        let payload_ptr = unsafe {
+            NonNull::new_unchecked(buf.get(PduHeader::PACKED_LEN..)?.as_ptr().cast_mut())
+        };
+
+        let working_counter = match buf
+            .get((PduHeader::PACKED_LEN + payload_len)..)
+            .ok_or(Error::Internal)
+            .and_then(|b| u16::unpack_from_slice(b).map_err(Error::from))
+        {
+            Ok(wkc) => wkc,
+            Err(e) => return Some(Err(e)),
+        };
+
+        let res = Ok(ReceivedPdu {
+            data_start: payload_ptr,
+            len: payload_len,
+            working_counter,
+            _storage: PhantomData,
+        });
+
+        // Update buffer pos for next iteration if there are more PDUs to come
+        if pdu_header.flags.more_follows {
+            self.buf_pos += this_pdu_len;
+        }
+        // No more frames, so quit the next time round by trying to read way off the end of the
+        // buffer.
+        else {
+            self.buf_pos = usize::MAX
+        }
+
+        Some(res.map(|pdu| (pdu, pdu_header)))
+    }
+}
+
+
 #[derive(Debug)]
+/// received pdu 
 pub struct ReceivedPdu<'sto> {
     data_start: NonNull<u8>,
     len: usize,
-    pub(crate) working_counter: u16,
+    /// number of subdevices which have responded to this pdu
+    pub working_counter: u16,
     _storage: PhantomData<&'sto ()>,
 }
 
 impl ReceivedPdu<'_> {
+    /// length of received pdu
     pub fn len(&self) -> usize {
         self.len
     }
 
+    /// trim the front of the pdu by `ct`
     pub fn trim_front(&mut self, ct: usize) {
         let ct = ct.min(self.len());
 
         self.data_start = unsafe { NonNull::new_unchecked(self.data_start.as_ptr().add(ct)) };
     }
 
+    /// working counter of pdu
     pub fn wkc(self, expected: u16) -> Result<Self, Error> {
         if self.working_counter == expected {
             Ok(self)
@@ -258,6 +355,7 @@ impl ReceivedPdu<'_> {
         }
     }
 
+    /// working counter of pdu, maybe
     pub fn maybe_wkc(self, expected: Option<u16>) -> Result<Self, Error> {
         match expected {
             Some(expected) => self.wkc(expected),

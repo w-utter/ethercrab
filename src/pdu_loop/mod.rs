@@ -1,7 +1,7 @@
 pub(crate) mod frame_element;
 pub(crate) mod frame_header;
 mod pdu_flags;
-mod pdu_header;
+pub(crate) mod pdu_header;
 mod pdu_rx;
 mod pdu_tx;
 // NOTE: Pub so doc links work

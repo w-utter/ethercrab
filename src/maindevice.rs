@@ -22,7 +22,7 @@ use core::{
     sync::atomic::{AtomicU16, Ordering},
 };
 use ethercrab_wire::{EtherCrabWireSized, EtherCrabWireWrite};
-use heapless::FnvIndexMap;
+use heapless::index_map::FnvIndexMap;
 
 /// The main EtherCAT controller.
 ///
@@ -41,12 +41,16 @@ pub struct MainDevice<'sto> {
     /// DC reference clock.
     ///
     /// If no DC subdevices are found, this will be `0`.
-    dc_reference_configured_address: AtomicU16,
+    pub dc_reference_configured_address: AtomicU16,
     pub(crate) timeouts: Timeouts,
-    pub(crate) config: MainDeviceConfig,
+    /// config for the main device
+    pub config: MainDeviceConfig,
 }
 
 unsafe impl Sync for MainDevice<'_> {}
+
+use crate::SendableFrame;
+use crate::pdu_loop::frame_element::created_frame::PduResponseHandle;
 
 impl<'sto> MainDevice<'sto> {
     /// Create a new EtherCrab MainDevice.
@@ -419,7 +423,7 @@ impl<'sto> MainDevice<'sto> {
     }
 
     /// Count the number of SubDevices on the network.
-    pub fn count_subdevices_io_uring(&self) -> Result<Option<(crate::SendableFrame<'_>, crate::pdu_loop::frame_element::created_frame::PduResponseHandle)>, Error> {
+    pub fn prep_count_subdevices(&self) -> Result<Option<(SendableFrame<'_>, PduResponseHandle)>, Error> {
         Command::brd(RegisterAddress::Type.into()).prep_sized::<u8>(self)
     }
 
@@ -488,6 +492,7 @@ impl<'sto> MainDevice<'sto> {
         .await
     }
 
+
     #[allow(unused)]
     pub(crate) const fn max_frame_data(&self) -> usize {
         self.pdu_loop.max_frame_data()
@@ -515,22 +520,22 @@ impl<'sto> MainDevice<'sto> {
         frame.await?.first_pdu(handle)
     }
 
-    /// TODO: check to see if this works.
-    /// this also means that all commands need to have a sync variant
-    /// after, the SendableFrame should be implemented the same as it is in the driver
-    ///
     /// this function is analogous to `single_pdu` for async
     pub(crate) fn prep_send_frame(
         &'sto self,
         command: Command,
         data: impl EtherCrabWireWrite,
         len_override: Option<u16>,
-    ) -> Result<Option<(crate::SendableFrame<'sto>, crate::pdu_loop::frame_element::created_frame::PduResponseHandle)>, Error> {
+    ) -> Result<Option<(SendableFrame<'sto>, PduResponseHandle)>, Error> {
         let mut frame = self.pdu_loop.alloc_frame()?;
         let handle = frame.push_pdu(command, data, len_override)?;
 
         crate::pdu_loop::frame_header::EthercatFrameHeader::pdu(frame.inner.pdu_payload_len() as u16)
             .pack_to_slice_unchecked(frame.inner.ecat_frame_header_mut());
+
+        let data = frame.inner.pdu_buf();
+        let data = &data[..frame.inner.pdu_payload_len()];
+        println!("sending frame data: {:02x?}, header info: dst {}, src {}", data, frame.inner.ethernet_frame().dst_addr(), frame.inner.ethernet_frame().src_addr());
 
         frame.inner.set_state(crate::pdu_loop::frame_element::FrameState::Sendable);
 
@@ -539,16 +544,253 @@ impl<'sto> MainDevice<'sto> {
 
         let frame = self.pdu_loop.storage.frame_at_index(usize::from(frame_idx));
 
-        let frame = crate::SendableFrame::claim_sending(frame, self.pdu_loop.storage.pdu_idx, self.pdu_loop.storage.frame_data_len);
+        let frame = SendableFrame::claim_sending(frame, self.pdu_loop.storage.pdu_idx, self.pdu_loop.storage.frame_data_len);
 
         Ok(frame.map(|frame| (frame, handle)))
     }
 
+    fn prep_push_frame(&'sto self, 
+        command: Command,
+        bytes: &[u8]
+    ) -> Result<Option<(SendableFrame<'sto>, PduResponseHandle)>, Error> {
+        self.prep_send_frame(command, bytes, None)
+        /*
+        let mut frame = self.pdu_loop.alloc_frame()?;
+        let pushed = frame.push_pdu_slice_rest(command, bytes)?;
+
+        frame.inner.set_state(crate::pdu_loop::frame_element::FrameState::Sendable);
+
+        let frame_element = unsafe { frame.inner.frame.as_ref() };
+        let frame_idx = frame_element.storage_slot_index;
+
+        let frame = self.pdu_loop.storage.frame_at_index(usize::from(frame_idx));
+
+        let frame = SendableFrame::claim_sending(frame, self.pdu_loop.storage.pdu_idx, self.pdu_loop.storage.frame_data_len);
+
+        match (frame, pushed) {
+            (Some(frame), Some((_, handle))) => Ok(Some((frame, handle))),
+            _ => Ok(None),
+        }
+        */
+    }
+
+    /// prep rx/tx loop, used for pdi's
+    pub unsafe fn prep_rx_tx(&'sto self, start_addr: u32, bytes: &[u8]) -> Result<Option<(SendableFrame<'sto>, PduResponseHandle)>, Error> {
+        self.prep_push_frame(Command::lrw(start_addr).into(), bytes)
+    }
+
+    /// like `blank_memory` except for io_uring
+    pub fn prep_blank_memory<const LEN: usize>(&self, start: impl Into<u16>) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
+        Command::bwr(start.into()).prep(self, LEN as u16)
+    }
+
+    /// like `reset_subdevices` but for io_uring
+    pub fn prep_reset_subdevices(&self, mut f: impl FnMut(Result<Option<(SendableFrame, PduResponseHandle)>, Error>) -> Result<(), Error>) -> Result<(), Error> {
+        let cmd = Command::bwr(RegisterAddress::AlControl.into());
+        let cmd = self.prep_send_frame(cmd.into(), AlControl::reset(), cmd.len_override);
+        f(cmd)?;
+
+        for fmmu_idx in 0..16 {
+            let cmd = self.prep_blank_memory::<{ Fmmu::PACKED_LEN }>(RegisterAddress::fmmu(fmmu_idx));
+            f(cmd)?;
+        }
+
+        for sm_idx in 0..16 {
+            let cmd = self.prep_blank_memory::<{ SyncManager::PACKED_LEN }>(RegisterAddress::sync_manager(sm_idx));
+            f(cmd)?;
+        }
+
+        let cmd = self.prep_blank_memory::<{ size_of::<u8>() }>(RegisterAddress::DcCyclicUnitControl);
+        f(cmd)?;
+        let cmd = self.prep_blank_memory::<{ size_of::<u64>() }>(RegisterAddress::DcSystemTime);
+        f(cmd)?;
+        let cmd = self.prep_blank_memory::<{ size_of::<u64>() }>(RegisterAddress::DcSystemTimeOffset);
+        f(cmd)?;
+        let cmd = self.prep_blank_memory::<{ size_of::<u32>() }>(RegisterAddress::DcSystemTimeTransmissionDelay);
+        f(cmd)?;
+        let cmd = self.prep_blank_memory::<{ size_of::<u32>() }>(RegisterAddress::DcSystemTimeDifference);
+        f(cmd)?;
+        let cmd = self.prep_blank_memory::<{ size_of::<u8>() }>(RegisterAddress::DcSyncActive);
+        f(cmd)?;
+        let cmd = self.prep_blank_memory::<{ size_of::<u32>() }>(RegisterAddress::DcSyncStartTime);
+        f(cmd)?;
+        let cmd = self.prep_blank_memory::<{ size_of::<u32>() }>(RegisterAddress::DcSync0CycleTime);
+        f(cmd)?;
+        let cmd = self.prep_blank_memory::<{ size_of::<u32>() }>(RegisterAddress::DcSync1CycleTime);
+        f(cmd)?;
+        
+        let cmd = Command::bwr(RegisterAddress::DcControlLoopParam3.into());
+        let cmd = self.prep_send_frame(cmd.into(), 0x0c00u16, cmd.len_override);
+        f(cmd)?;
+
+        let cmd = Command::bwr(RegisterAddress::DcControlLoopParam1.into());
+        let cmd = self.prep_send_frame(cmd.into(), 0x1000u16, cmd.len_override);
+        f(cmd)?;
+
+        Ok(())
+    }
+
+    /// configures subdevice addresses
+    pub fn prep_configure_subdev_addrs(&self, subdev_count: u16, mut f: impl FnMut(Result<Option<(SendableFrame, PduResponseHandle)>, Error>, u16, u16) -> Result<(), Error>) -> Result<(), Error> {
+        for subdev_idx in 0..subdev_count {
+            let configured_addr = BASE_SUBDEVICE_ADDRESS.wrapping_add(subdev_idx);
+
+            let cmd = Command::apwr(subdev_idx, RegisterAddress::ConfiguredStationAddress.into());
+            let cmd = self.prep_send_frame(cmd.into(), configured_addr, cmd.len_override);
+            f(cmd, subdev_idx, configured_addr)?;
+        }
+        Ok(())
+    }
+
+    /// prep to wait for all SubDevices on the network to reach a given state.
+    pub fn prep_wait_for_state(&self, desired_state: SubDeviceState) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
+            Command::brd(RegisterAddress::AlStatus.into()).prep_sized::<AlControl>(self)
+    }
+
+    /// request to set the device to a certain state.
+    pub fn prep_request_subdevice_state(&self, configured_addr: u16, desired_state: SubDeviceState) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
+        let cmd = Command::fpwr(configured_addr, RegisterAddress::AlControl.into());
+        self.prep_send_frame(cmd.into(), AlControl::new(desired_state), cmd.len_override)
+    }
+
+    /// prep to wait for the device to change to a certain state.
+    pub fn prep_wait_subdevice_state(&self, configured_addr: u16, desired_state: SubDeviceState) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
+        Command::fprd(configured_addr, RegisterAddress::AlControl.into()).prep_sized::<AlControl>(self)
+    }
+
+    /// preps to clear the eeprom
+    pub fn prep_clear_eeprom(&self, configured_addr: u16) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
+        let cmd = Command::fpwr(configured_addr, RegisterAddress::SiiConfig.into());
+        self.prep_send_frame(cmd.into(), 2u16, cmd.len_override)
+    }
+
+    /// preps to set the eeprom
+    pub fn prep_set_eeprom(&self, configured_addr: u16, mode: crate::SiiOwner) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
+        let cmd = Command::fpwr(configured_addr, RegisterAddress::SiiConfig.into());
+        self.prep_send_frame(cmd.into(), mode, cmd.len_override)
+    }
+
+    /// prep to start reading eeprom chunk
+    pub fn prep_read_eeprom_chunk(&self, configured_device_addr: u16, start_word: u16) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
+        let cmd = Command::fpwr(configured_device_addr, RegisterAddress::SiiControl.into());
+        self.prep_send_frame(cmd.into(), crate::eeprom::types::SiiRequest::read(start_word), cmd.len_override)
+    }
+
+    /// prep to wait for eeprom ready, to follow `prep_read_eeprom_chunk`
+    pub fn prep_wait_for_eeprom_chunk(&self, configured_device_addr: u16) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
+        Command::fprd(configured_device_addr, RegisterAddress::SiiControl.into()).prep_sized::<crate::SiiControl>(self)
+    }
+
+    /// prep read available eeprom, to follow `perp_wait_for_eeprom_chunk`
+    pub fn prep_read_available_eeprom_chunk(&self, configured_device_addr: u16, ctrl: crate::SiiControl) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
+        Command::fprd(configured_device_addr, RegisterAddress::SiiData.into()).prep(self, ctrl.read_size.chunk_len())
+    }
+
+    /// preps to read device properties
+    pub fn prep_device_properties(&self, configured_addr: u16, mut f: impl FnMut(Result<Option<(SendableFrame, PduResponseHandle)>, Error>) -> Result<(), Error>) -> Result<(), Error> {
+        // flags
+        let cmd = Command::fprd(configured_addr, RegisterAddress::SupportFlags.into()).prep_sized::<crate::SupportFlags>(self);
+        f(cmd)?;
+
+        // alias
+        let cmd = Command::fprd(configured_addr, RegisterAddress::ConfiguredStationAlias.into()).prep_sized::<u16>(self);
+        f(cmd)?;
+
+        // ports
+        let cmd = Command::fprd(configured_addr, RegisterAddress::DlStatus.into()).prep_sized::<crate::dl_status::DlStatus>(self);
+        f(cmd)?;
+
+        Ok(())
+    }
+
+    /// latch receive times into all ports of all subdevices
+    pub fn prep_latch_receive_times<'a>(&self) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
+        let cmd = Command::bwr(RegisterAddress::DcTimePort0.into());
+        self.prep_send_frame(cmd.into(), 0u32, cmd.len_override)
+    }
+
+    /// latch distributed clock receive time
+    pub fn prep_latch_dc_times<'a>(&self, subdevices: &'a [SubDevice], mut f: impl FnMut(Result<Option<(SendableFrame, PduResponseHandle)>, Error>, u16) -> Result<(), Error>) -> Result<u16, Error> {
+        let mut dc_supported_devices = 0;
+        for (id, subdev) in subdevices.iter().enumerate().filter(|(id, dev)| dev.dc_support().any()) {
+            let cmd = Command::fprd(subdev.configured_address(), RegisterAddress::DcReceiveTime.into()).prep_sized::<u64>(self);
+            f(cmd, id as u16)?;
+
+            let cmd = Command::fprd(subdev.configured_address(), RegisterAddress::DcTimePort0.into()).prep_sized::<[u32; 4]>(self);
+            f(cmd, id as u16)?;
+            dc_supported_devices += 1;
+        }
+        Ok(dc_supported_devices)
+    }
+
+    /// preps to configure the distributed clock
+    pub fn prep_configure_dc<'a>(&self, subdevices: &'a mut [SubDevice], now: impl Fn() -> u64 + Copy, mut f: impl FnMut(Result<Option<(SendableFrame, PduResponseHandle)>, Error>, u16) -> Result<(), Error>) -> Result<Option<usize>, Error> {
+        dc::prep_configure_dc(self, subdevices, now, f)
+    }
+
+    /// preps syncing distributed clock
+    /// the host has to manage the amount of iterations remaining
+    pub fn prep_dc_static_sync(&self, master: &SubDevice) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
+        Command::frmw(master.configured_address(), RegisterAddress::DcSystemTime.into()).prep_sized::<u64>(self)
+    }
+
+    /// prep write for sync manager config
+    pub fn prep_write_sm_config(&self, configured_addr: u16, sm_idx: u8, sync_manager: &SyncManager, length_bytes: u16) -> Result<Option<((SendableFrame, PduResponseHandle), crate::sync_manager_channel::SyncManagerChannel)>, Error> {
+        let config = crate::sync_manager_channel::SyncManagerChannel {
+            physical_start_address: sync_manager.start_addr,
+            length_bytes,
+            control: sync_manager.control,
+            status: Default::default(),
+            enable: crate::sync_manager_channel::Enable {
+                enable: sync_manager.enable.contains(crate::eeprom::types::SyncManagerEnable::ENABLE),
+                ..Default::default()
+            },
+        };
+
+        //TODO: remove the 3 lines below this
+        //use ethercrab_wire::EtherCrabWireWriteSized;
+        //let a = config.pack();
+        //println!("cfg bytes {:?} to idx {sm_idx} on {configured_addr}\n\n", a.as_ref(), );
+        
+
+
+        let cmd = Command::fpwr(configured_addr, RegisterAddress::sync_manager(sm_idx).into());
+
+
+        Ok(self.prep_send_frame(cmd.into(), &config, cmd.len_override)?.map(|(frame, handle)| ((frame, handle), config)))
+        //Ok(((frame, handle), config))
+    }
 
 
 
+    /// preps reading of the mbx sm status
+    pub fn prep_mailbox_sync_manager_status(&self, configured_addr: u16, sm_idx: u8) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
+        let status = RegisterAddress::sync_manager_status(sm_idx);
+        Command::fprd(configured_addr, status.into()).prep_sized::<crate::sync_manager_channel::Status>(self)
+    }
 
+    /// preps reading from an arbitrary addr
+    pub unsafe fn prep_read(&self, configured_addr: u16, read_addr: u16, read_len: u16) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
+        Command::fprd(configured_addr, read_addr).prep(self, read_len)
+    }
 
+    /// preps writing to an arbitrary addr
+    pub unsafe fn prep_write(&self, configured_addr: u16, write_addr: u16, write_len: u16, data: impl EtherCrabWireWrite) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
+        let cmd = Command::fpwr(configured_addr, write_addr);
+        //println!("write len: {write_len}");
+        self.prep_send_frame(cmd.into(), data, Some(write_len))
+    }
+
+    /// prep to read fmmu
+    pub fn prep_read_fmmu(&self, configured_addr: u16, fmmu_index: u8) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
+        Command::fprd(configured_addr, RegisterAddress::fmmu(fmmu_index).into()).prep_sized::<crate::Fmmu>(self)
+    }
+
+    /// prep writing to an fmmu
+    pub fn prep_write_fmmu(&self, configured_addr: u16, fmmu_index: u8, fmmu: crate::Fmmu) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
+        let cmd = Command::fpwr(configured_addr, RegisterAddress::fmmu(fmmu_index).into());
+        self.prep_send_frame(cmd.into(), fmmu, cmd.len_override)
+    }
 
     /// Release the [`PduLoop`] storage **without** resetting it.
     ///

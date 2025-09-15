@@ -12,14 +12,19 @@ pub const SM_BASE_ADDRESS: u16 = 0x1c10;
 #[wire(bytes = 8)]
 pub struct SyncManagerChannel {
     #[wire(bytes = 2)]
+    /// TODO: docs
     pub physical_start_address: u16,
     #[wire(bytes = 2)]
+    /// TODO: docs
     pub length_bytes: u16,
     #[wire(bytes = 1)]
+    /// TODO: docs
     pub control: Control,
     #[wire(bytes = 1)]
+    /// TODO: docs
     pub status: Status,
     #[wire(bytes = 2)]
+    /// TODO: docs
     pub enable: Enable,
 }
 
@@ -62,16 +67,22 @@ impl core::fmt::Display for SyncManagerChannel {
 #[derive(Default, Copy, Clone, Debug, PartialEq, Eq, ethercrab_wire::EtherCrabWireReadWrite)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[wire(bytes = 1)]
+    /// TODO: docs
 pub struct Control {
     #[wire(bits = 2)]
+    /// TODO: docs
     pub operation_mode: OperationMode,
     #[wire(bits = 2)]
+    /// TODO: docs
     pub direction: Direction,
     #[wire(bits = 1)]
+    /// TODO: docs
     pub ecat_event_enable: bool,
     #[wire(bits = 1)]
+    /// TODO: docs
     pub dls_user_event_enable: bool,
     #[wire(bits = 1, post_skip = 1)]
+    /// TODO: docs
     pub watchdog_enable: bool,
     // reserved1: bool
 }
@@ -79,19 +90,26 @@ pub struct Control {
 #[derive(Default, Copy, Clone, Debug, PartialEq, Eq, ethercrab_wire::EtherCrabWireReadWrite)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[wire(bytes = 1)]
+    /// TODO: docs
 pub struct Status {
     #[wire(bits = 1)]
+    /// TODO: docs
     pub has_write_event: bool,
     #[wire(bits = 1, post_skip = 1)]
+    /// TODO: docs
     pub has_read_event: bool,
     // reserved1: bool
     #[wire(bits = 1)]
+    /// TODO: docs
     pub mailbox_full: bool,
     #[wire(bits = 2)]
+    /// TODO: docs
     pub buffer_state: BufferState,
     #[wire(bits = 1)]
+    /// TODO: docs
     pub read_buffer_open: bool,
     #[wire(bits = 1)]
+    /// TODO: docs
     pub write_buffer_open: bool,
 }
 
@@ -101,8 +119,10 @@ pub struct Status {
 #[wire(bytes = 2)]
 pub struct Enable {
     #[wire(bits = 1)]
+    /// TODO: docs
     pub enable: bool,
     #[wire(bits = 1, post_skip = 4)]
+    /// TODO: docs
     pub repeat: bool,
     // reserved4: u8
     /// DC Event 0 with EtherCAT write.
@@ -118,8 +138,10 @@ pub struct Enable {
     pub enable_dc_event_local_write: bool,
 
     #[wire(bits = 1)]
+    /// TODO: docs
     pub channel_pdi_disabled: bool,
     #[wire(bits = 1, post_skip = 6)]
+    /// TODO: docs
     pub repeat_ack: bool,
     // reserved6: u8,
 }
@@ -128,9 +150,12 @@ pub struct Enable {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[wire(bits = 2)]
 #[repr(u8)]
+    /// TODO: docs
 pub enum OperationMode {
     #[default]
+    /// TODO: docs
     Normal = 0x00,
+    /// TODO: docs
     Mailbox = 0x02,
 }
 
@@ -138,9 +163,12 @@ pub enum OperationMode {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[wire(bits = 2)]
 #[repr(u8)]
+    /// TODO: docs
 pub enum Direction {
     #[default]
+    /// TODO: docs
     MasterRead = 0x00,
+    /// TODO: docs
     MasterWrite = 0x01,
 }
 

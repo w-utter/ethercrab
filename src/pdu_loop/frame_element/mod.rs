@@ -1,5 +1,6 @@
 pub mod created_frame;
 mod frame_box;
+/// received pdu info of a frame
 pub mod received_frame;
 pub mod receiving_frame;
 pub mod sendable_frame;

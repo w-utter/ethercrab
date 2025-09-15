@@ -5,12 +5,16 @@
     derive(arbitrary::Arbitrary, ethercrab_wire::EtherCrabWireReadWrite)
 )]
 #[wire(bytes = 2)]
+/// status
 pub struct DlStatus {
     #[wire(bits = 1)]
+    /// if pdi is operational
     pub pdi_operational: bool,
     #[wire(bits = 1)]
+    /// is watchdog ok
     pub watchdog_ok: bool,
     #[wire(bits = 1, post_skip = 1)]
+    /// link detection is extended
     pub extended_link_detection: bool,
     // pub _reserved: bool,
     /// True if port 0 has a physical link present.

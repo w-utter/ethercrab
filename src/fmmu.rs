@@ -13,27 +13,35 @@ pub struct Fmmu {
     #[wire(bytes = 4)]
     pub logical_start_address: u32,
 
+    /// TODO: docs
     #[wire(bytes = 2)]
     pub length_bytes: u16,
 
+    /// TODO: docs
     #[wire(bits = 3, post_skip = 5)]
     pub logical_start_bit: u8,
 
+    /// TODO: docs
     #[wire(bits = 3, post_skip = 5)]
     pub logical_end_bit: u8,
 
+    /// TODO: docs
     #[wire(bytes = 2)]
     pub physical_start_address: u16,
 
+    /// TODO: docs
     #[wire(bits = 3, post_skip = 5)]
     pub physical_start_bit: u8,
 
+    /// TODO: docs
     #[wire(bits = 1)]
     pub read_enable: bool,
 
+    /// TODO: docs
     #[wire(bits = 1, post_skip = 6)]
     pub write_enable: bool,
 
+    /// TODO: docs
     // Lots of spare bytes after this one!
     #[wire(bits = 1, post_skip = 31)]
     pub enable: bool,

@@ -1,6 +1,8 @@
 use ethercrab_wire::EtherCrabWireReadSized;
 
+    /// TODO: docs
 pub mod abort_code;
+    /// TODO: docs
 pub mod services;
 
 pub use services::{ObjectDescriptionListQuery, ObjectDescriptionListQueryCounts};
@@ -10,6 +12,7 @@ pub use services::{ObjectDescriptionListQuery, ObjectDescriptionListQueryCounts}
 #[cfg_attr(test, derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
+    /// TODO: docs
 pub enum CoeService {
     /// Emergency
     Emergency = 0x01,
@@ -35,38 +38,53 @@ pub enum CoeService {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ethercrab_wire::EtherCrabWireReadWrite)]
 #[wire(bits = 3)]
 #[repr(u8)]
+    /// TODO: docs
 pub enum CoeCommand {
+    /// TODO: docs
     Download = 0x01,
+    /// TODO: docs
     Upload = 0x02,
+    /// TODO: docs
     Abort = 0x04,
+    /// TODO: docs
     UploadSegment = 0x03,
 }
 
 /// Defined in ETG1000.6 Section 5.6.2.1.1
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ethercrab_wire::EtherCrabWireReadWrite)]
 #[wire(bytes = 4)]
+    /// TODO: docs
 pub struct InitSdoHeader {
     #[wire(bits = 1)]
+    /// TODO: docs
     pub size_indicator: bool,
     #[wire(bits = 1)]
+    /// TODO: docs
     pub expedited_transfer: bool,
     #[wire(bits = 2)]
+    /// TODO: docs
     pub size: u8,
     #[wire(bits = 1)]
+    /// TODO: docs
     pub complete_access: bool,
     #[wire(bits = 3)]
+    /// TODO: docs
     pub command: CoeCommand,
     #[wire(bytes = 2)]
+    /// TODO: docs
     pub index: u16,
     #[wire(bytes = 1)]
+    /// TODO: docs
     pub sub_index: u8,
 }
 
 /// Defined in ETG1000.6 5.6.2.3.1
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ethercrab_wire::EtherCrabWireReadWrite)]
 #[wire(bytes = 1)]
+    /// TODO: docs
 pub struct SegmentSdoHeader {
     #[wire(bits = 1)]
+    /// TODO: docs
     pub is_last_segment: bool,
 
     /// Segment data size, `0x00` to `0x07`.
@@ -74,6 +92,7 @@ pub struct SegmentSdoHeader {
     pub segment_data_size: u8,
 
     #[wire(bits = 1)]
+    /// TODO: docs
     pub toggle: bool,
 
     #[wire(bits = 3)]
@@ -83,25 +102,37 @@ pub struct SegmentSdoHeader {
 /// Defined in ETG.1000.6 5.6.3.2
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ethercrab_wire::EtherCrabWireReadWrite)]
 #[wire(bytes = 4)]
+    /// TODO: docs
 pub struct SdoInfoHeader {
     #[wire(bits = 7)]
+    /// TODO: docs
     pub op_code: SdoInfoOpCode,
     #[wire(bits = 1)]
+    /// TODO: docs
     pub incomplete: bool,
     #[wire(pre_skip = 8, bytes = 2)]
+    /// TODO: docs
     pub fragments_left: u16,
 }
 
 /// Defined in ETG.1000.6 5.6.3.2
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ethercrab_wire::EtherCrabWireReadWrite)]
 #[repr(u8)]
+    /// TODO: docs
 pub enum SdoInfoOpCode {
+    /// TODO: docs
     GetObjectDescriptionListRequest = 0x01,
+    /// TODO: docs
     GetObjectDescriptionListResponse = 0x02,
+    /// TODO: docs
     GetObjectDescriptionRequest = 0x03,
+    /// TODO: docs
     GetObjectDescriptionResponse = 0x04,
+    /// TODO: docs
     GetEntryDescriptionRequest = 0x05,
+    /// TODO: docs
     GetEntryDescriptionResponse = 0x06,
+    /// TODO: docs
     SdoInfoErrorRequest = 0x07,
 }
 

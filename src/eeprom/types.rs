@@ -8,6 +8,7 @@ use ethercrab_wire::{EtherCrabWireRead, EtherCrabWireSized};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, ethercrab_wire::EtherCrabWireReadWrite)]
 #[repr(u8)]
+/// eeprom access rights
 pub enum SiiOwner {
     /// EEPROM access rights are assigned to PDI during state change from Init to PreOp, Init to
     /// Boot and while in Boot
@@ -24,43 +25,44 @@ pub enum SiiOwner {
 pub struct SiiControl {
     // First byte
     #[wire(bits = 1)]
-    pub access: SiiAccess,
+    pub(crate) access: SiiAccess,
     // reserved4: u8,
     #[wire(pre_skip = 4, bits = 1)]
-    pub emulate_sii: bool,
+    pub(crate)  emulate_sii: bool,
     #[wire(bits = 1)]
-    pub read_size: SiiReadSize,
+    pub(crate)  read_size: SiiReadSize,
     #[wire(bits = 1)]
-    pub address_type: SiiAddressSize,
+    pub(crate)  address_type: SiiAddressSize,
 
     // Second byte
     #[wire(bits = 1)]
-    pub read: bool,
+    pub(crate)  read: bool,
     #[wire(bits = 1)]
-    pub write: bool,
+    pub(crate)  write: bool,
     #[wire(bits = 1)]
-    pub reload: bool,
+    pub (crate) reload: bool,
     #[wire(bits = 1)]
-    pub checksum_error: bool,
+    pub (crate) checksum_error: bool,
     #[wire(bits = 1)]
-    pub device_info_error: bool,
+    pub(crate)  device_info_error: bool,
     // NOTE: This comes back as `1` when setting the station alias, however the alias is set
     // correctly on EK1100, and the same behaviour happens with SOEM's `eepromtool` as well, so I
     // don't know what this field is for/does.
     #[wire(bits = 1)]
-    pub command_error: bool,
+    pub(crate)  command_error: bool,
     #[wire(bits = 1)]
-    pub write_error: bool,
+    pub(crate)  write_error: bool,
     #[wire(bits = 1)]
-    pub busy: bool,
+    /// whether the ctrl is busy
+    pub  busy: bool,
 }
 
 impl SiiControl {
-    pub fn has_error(&self) -> bool {
+    pub(crate)  fn has_error(&self) -> bool {
         self.checksum_error || self.device_info_error || self.write_error
     }
 
-    pub fn error_reset(self) -> Self {
+    pub(crate)  fn error_reset(self) -> Self {
         Self {
             checksum_error: false,
             device_info_error: false,
@@ -243,20 +245,33 @@ pub enum SiiCoding {
 #[repr(u16)]
 pub enum CategoryType {
     #[default]
+    /// empty
     Nop = 0,
     #[wire(alternatives = [2,3,4,5,6,7,8,9])]
+    /// specific to device
     DeviceSpecific = 1,
+    /// string data
     Strings = 10,
+    /// data types
     DataTypes = 20,
+    /// general
     General = 30,
+    /// fieldbus memory management unit
     Fmmu = 40,
+    /// sync manager
     SyncManager = 41,
+    /// extended fieldbus memory management unit
     FmmuExtended = 42,
+    /// sync unit
     SyncUnit = 43,
+    /// sending pdo
     TxPdo = 50,
+    /// receiving pdo
     RxPdo = 51,
+    /// dc
     DistributedClock = 60,
     // Device specific: 0x1000-0xfffe
+    /// end marker
     End = 0xffff,
 }
 
@@ -284,10 +299,14 @@ impl From<PdoType> for CategoryType {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
 pub enum FmmuUsage {
+    /// TODO: doc
     #[wire(alternatives = [0xff])]
     Unused = 0x00,
+    /// TODO: doc
     Outputs = 0x01,
+    /// TODO: doc
     Inputs = 0x02,
+    /// TODO: doc
     SyncManagerStatus = 0x03,
 }
 
@@ -351,9 +370,11 @@ pub struct SiiGeneral {
     #[wire(bytes = 1)]
     pub(crate) order_string_idx: u8,
     #[wire(bytes = 1, post_skip_bytes = 1)]
+    /// the index of where to find the name of the device
     pub name_string_idx: u8,
     // reserved: u8,
     #[wire(bytes = 1)]
+    /// details about can over ethercat
     pub coe_details: CoeDetails,
     #[wire(bytes = 1)]
     pub(crate) foe_enabled: bool,
@@ -424,6 +445,7 @@ impl EtherCrabWireRead for Flags {
 
 bitflags::bitflags! {
     #[derive(Debug, Default, PartialEq, Eq)]
+    /// info for coe 
     pub struct CoeDetails: u8 {
         /// Bit 0: Enable SDO
         const ENABLE_SDO = 0x01;
@@ -460,11 +482,14 @@ impl EtherCrabWireRead for CoeDetails {
 #[derive(Copy, Clone, PartialEq, Eq, ethercrab_wire::EtherCrabWireRead)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[wire(bytes = 8)]
+/// TODO: docs
 pub struct SyncManager {
     #[wire(bytes = 2)]
-    pub(crate) start_addr: u16,
+    /// starting address
+    pub start_addr: u16,
     #[wire(bytes = 2)]
-    pub(crate) length: u16,
+    /// length in bytes of the sync manager 
+    pub length: u16,
     #[wire(bytes = 1, post_skip_bytes = 1)]
     pub(crate) control: sync_manager_channel::Control,
     #[wire(bytes = 1)]
@@ -478,7 +503,8 @@ pub struct SyncManager {
 }
 
 impl SyncManager {
-    pub(crate) fn usage_type(&self) -> SyncManagerType {
+    /// the type of sync manager that this is.
+    pub fn usage_type(&self) -> SyncManagerType {
         if self.usage_type != SyncManagerType::Unknown {
             self.usage_type
         } else {
@@ -549,6 +575,7 @@ impl defmt::Format for SyncManagerEnable {
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, ethercrab_wire::EtherCrabWireRead)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
+/// type of syncmanager
 pub enum SyncManagerType {
     /// Not used or unknown.
     #[default]
@@ -768,6 +795,7 @@ impl defmt::Format for MailboxProtocols {
 #[derive(Copy, Clone, Default, PartialEq, ethercrab_wire::EtherCrabWireRead)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[wire(bytes = 10)]
+/// default mailbox for a subdevice
 pub struct DefaultMailbox {
     /// MainDevice to SubDevice receive mailbox address offset.
     #[wire(bytes = 2)]
@@ -787,6 +815,7 @@ pub struct DefaultMailbox {
 }
 
 impl DefaultMailbox {
+    /// whether it actually has a mailbox
     pub fn has_mailbox(&self) -> bool {
         !self.supported_protocols.is_empty() && self.subdevice_receive_size > 0
             || self.subdevice_send_size > 0

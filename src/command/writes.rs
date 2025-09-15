@@ -51,7 +51,7 @@ pub struct WrappedWrite {
     pub command: Writes,
     /// Expected working counter.
     wkc: Option<u16>,
-    len_override: Option<u16>,
+    pub(crate) len_override: Option<u16>,
 }
 
 impl WrappedWrite {
@@ -134,5 +134,10 @@ impl WrappedWrite {
         len_override: Option<u16>,
     ) -> impl core::future::Future<Output = Result<ReceivedPdu<'maindevice>, Error>> {
         maindevice.single_pdu(self.command.into(), value, len_override)
+    }
+
+    pub(crate) fn prep<'maindevice>(&self, maindevice: &'maindevice MainDevice<'maindevice>, len: u16,) -> Result<Option<(crate::SendableFrame<'maindevice>, crate::pdu_loop::frame_element::created_frame::PduResponseHandle)>, Error> {
+
+        maindevice.prep_send_frame(self.command.into(), (), Some(len))
     }
 }

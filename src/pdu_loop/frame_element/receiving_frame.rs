@@ -12,7 +12,7 @@ use futures_lite::FutureExt;
 /// This state may only be entered once the frame has been sent over the network.
 #[derive(Debug)]
 pub struct ReceivingFrame<'sto> {
-    inner: FrameBox<'sto>,
+    pub(crate) inner: FrameBox<'sto>,
 }
 
 impl<'sto> ReceivingFrame<'sto> {

@@ -158,29 +158,42 @@
 pub(crate) mod fmt;
 
 mod al_control;
+pub use al_control::AlControl;
 mod al_status_code;
 mod base_data_types;
-mod coe;
+    /// TODO: docs
+pub mod coe;
 mod command;
 mod dc;
 mod dl_status;
+pub use dl_status::DlStatus;
 mod eeprom;
+pub use eeprom::types::SiiOwner;
+pub use crate::eeprom::types::{SiiControl, CategoryType, SiiGeneral, SyncManager, DefaultMailbox, SyncManagerType, MailboxProtocols, CoeDetails, FmmuEx, FmmuUsage};
 pub mod error;
 mod ethernet;
 mod fmmu;
+pub use fmmu::Fmmu;
 mod generate;
 mod mailbox;
 mod maindevice;
 mod maindevice_config;
 mod pdi;
+pub use pdi::{PdiOffset, PdiSegment};
 mod pdu_loop;
 mod register;
+pub use register::SupportFlags;
 mod subdevice;
 pub mod subdevice_group;
 mod subdevice_state;
-mod sync_manager_channel;
+    /// TODO: docs
+pub mod sync_manager_channel;
 mod timer_factory;
 mod vendors;
+
+pub use pdu_loop::frame_element::received_frame;
+pub use pdu_loop::pdu_header::PduHeader;
+pub use pdu_loop::frame_element::created_frame::PduResponseHandle;
 
 #[cfg(feature = "std")]
 pub mod std;
@@ -200,6 +213,9 @@ pub use register::{DcSupport, RegisterAddress};
 pub use subdevice::{
     DcSync, ObjectDescriptionListQuery, ObjectDescriptionListQueryCounts, SubDevice,
     SubDeviceIdentity, SubDevicePdi, SubDeviceRef,
+    ports::Ports,
+    Mailbox,
+    configuration::PdoDirection,
 };
 pub use subdevice_group::{GroupId, SubDeviceGroup, SubDeviceGroupHandle, TxRxResponse};
 pub use subdevice_state::SubDeviceState;
