@@ -80,7 +80,6 @@ impl<'sto> CreatedFrame<'sto> {
 
         let data = self.inner.pdu_buf();
         let data = &data[..self.inner.pdu_payload_len()];
-        println!("sending frame data: {:02x?}", data);
 
         ReceiveFrameFut {
             frame: Some(self.inner),

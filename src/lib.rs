@@ -177,6 +177,7 @@ pub use fmmu::Fmmu;
 mod generate;
 mod mailbox;
 mod maindevice;
+pub use maindevice::{ResetDevices, PrepResetDevices, ConfigureDevices, PrepConfigureDevices, PrepDeviceProperties, DeviceProperties};
 mod maindevice_config;
 mod pdi;
 pub use pdi::{PdiOffset, PdiSegment};

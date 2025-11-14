@@ -16,6 +16,7 @@ use crate::{
     subdevice_state::SubDeviceState,
     timer_factory::IntoTimeout,
 };
+
 use core::{
     cell::UnsafeCell,
     mem::size_of,
@@ -554,24 +555,6 @@ impl<'sto> MainDevice<'sto> {
         bytes: &[u8]
     ) -> Result<Option<(SendableFrame<'sto>, PduResponseHandle)>, Error> {
         self.prep_send_frame(command, bytes, None)
-        /*
-        let mut frame = self.pdu_loop.alloc_frame()?;
-        let pushed = frame.push_pdu_slice_rest(command, bytes)?;
-
-        frame.inner.set_state(crate::pdu_loop::frame_element::FrameState::Sendable);
-
-        let frame_element = unsafe { frame.inner.frame.as_ref() };
-        let frame_idx = frame_element.storage_slot_index;
-
-        let frame = self.pdu_loop.storage.frame_at_index(usize::from(frame_idx));
-
-        let frame = SendableFrame::claim_sending(frame, self.pdu_loop.storage.pdu_idx, self.pdu_loop.storage.frame_data_len);
-
-        match (frame, pushed) {
-            (Some(frame), Some((_, handle))) => Ok(Some((frame, handle))),
-            _ => Ok(None),
-        }
-        */
     }
 
     /// prep rx/tx loop, used for pdi's
@@ -585,61 +568,13 @@ impl<'sto> MainDevice<'sto> {
     }
 
     /// like `reset_subdevices` but for io_uring
-    pub fn prep_reset_subdevices(&self, mut f: impl FnMut(Result<Option<(SendableFrame, PduResponseHandle)>, Error>) -> Result<(), Error>) -> Result<(), Error> {
-        let cmd = Command::bwr(RegisterAddress::AlControl.into());
-        let cmd = self.prep_send_frame(cmd.into(), AlControl::reset(), cmd.len_override);
-        f(cmd)?;
-
-        for fmmu_idx in 0..16 {
-            let cmd = self.prep_blank_memory::<{ Fmmu::PACKED_LEN }>(RegisterAddress::fmmu(fmmu_idx));
-            f(cmd)?;
-        }
-
-        for sm_idx in 0..16 {
-            let cmd = self.prep_blank_memory::<{ SyncManager::PACKED_LEN }>(RegisterAddress::sync_manager(sm_idx));
-            f(cmd)?;
-        }
-
-        let cmd = self.prep_blank_memory::<{ size_of::<u8>() }>(RegisterAddress::DcCyclicUnitControl);
-        f(cmd)?;
-        let cmd = self.prep_blank_memory::<{ size_of::<u64>() }>(RegisterAddress::DcSystemTime);
-        f(cmd)?;
-        let cmd = self.prep_blank_memory::<{ size_of::<u64>() }>(RegisterAddress::DcSystemTimeOffset);
-        f(cmd)?;
-        let cmd = self.prep_blank_memory::<{ size_of::<u32>() }>(RegisterAddress::DcSystemTimeTransmissionDelay);
-        f(cmd)?;
-        let cmd = self.prep_blank_memory::<{ size_of::<u32>() }>(RegisterAddress::DcSystemTimeDifference);
-        f(cmd)?;
-        let cmd = self.prep_blank_memory::<{ size_of::<u8>() }>(RegisterAddress::DcSyncActive);
-        f(cmd)?;
-        let cmd = self.prep_blank_memory::<{ size_of::<u32>() }>(RegisterAddress::DcSyncStartTime);
-        f(cmd)?;
-        let cmd = self.prep_blank_memory::<{ size_of::<u32>() }>(RegisterAddress::DcSync0CycleTime);
-        f(cmd)?;
-        let cmd = self.prep_blank_memory::<{ size_of::<u32>() }>(RegisterAddress::DcSync1CycleTime);
-        f(cmd)?;
-        
-        let cmd = Command::bwr(RegisterAddress::DcControlLoopParam3.into());
-        let cmd = self.prep_send_frame(cmd.into(), 0x0c00u16, cmd.len_override);
-        f(cmd)?;
-
-        let cmd = Command::bwr(RegisterAddress::DcControlLoopParam1.into());
-        let cmd = self.prep_send_frame(cmd.into(), 0x1000u16, cmd.len_override);
-        f(cmd)?;
-
-        Ok(())
+    pub fn prep_reset_subdevices(&self) -> PrepResetDevices {
+        PrepResetDevices::AlControl
     }
 
     /// configures subdevice addresses
-    pub fn prep_configure_subdev_addrs(&self, subdev_count: u16, mut f: impl FnMut(Result<Option<(SendableFrame, PduResponseHandle)>, Error>, u16, u16) -> Result<(), Error>) -> Result<(), Error> {
-        for subdev_idx in 0..subdev_count {
-            let configured_addr = BASE_SUBDEVICE_ADDRESS.wrapping_add(subdev_idx);
-
-            let cmd = Command::apwr(subdev_idx, RegisterAddress::ConfiguredStationAddress.into());
-            let cmd = self.prep_send_frame(cmd.into(), configured_addr, cmd.len_override);
-            f(cmd, subdev_idx, configured_addr)?;
-        }
-        Ok(())
+    pub fn prep_configure_subdev_addrs(&self, subdev_count: u16) -> PrepConfigureDevices {
+        PrepConfigureDevices::new(subdev_count)
     }
 
     /// prep to wait for all SubDevices on the network to reach a given state.
@@ -687,20 +622,8 @@ impl<'sto> MainDevice<'sto> {
     }
 
     /// preps to read device properties
-    pub fn prep_device_properties(&self, configured_addr: u16, mut f: impl FnMut(Result<Option<(SendableFrame, PduResponseHandle)>, Error>) -> Result<(), Error>) -> Result<(), Error> {
-        // flags
-        let cmd = Command::fprd(configured_addr, RegisterAddress::SupportFlags.into()).prep_sized::<crate::SupportFlags>(self);
-        f(cmd)?;
-
-        // alias
-        let cmd = Command::fprd(configured_addr, RegisterAddress::ConfiguredStationAlias.into()).prep_sized::<u16>(self);
-        f(cmd)?;
-
-        // ports
-        let cmd = Command::fprd(configured_addr, RegisterAddress::DlStatus.into()).prep_sized::<crate::dl_status::DlStatus>(self);
-        f(cmd)?;
-
-        Ok(())
+    pub fn prep_device_properties(&self, configured_addr: u16) -> PrepDeviceProperties {
+        PrepDeviceProperties::new(configured_addr)
     }
 
     /// latch receive times into all ports of all subdevices
@@ -846,5 +769,214 @@ impl<'sto> MainDevice<'sto> {
         self.pdu_loop.wake_sender();
 
         self.pdu_loop
+    }
+}
+
+///TODO: docs
+#[derive(Clone, Copy, Default)]
+pub enum PrepResetDevices {
+///TODO: docs
+    #[default]
+    AlControl,
+///TODO: docs
+    Fmmus(u8),
+///TODO: docs
+    SyncManagers(u8),
+///TODO: docs
+    Dc(u8),
+}
+
+///TODO: docs
+pub struct ResetDevices<'a, 'b> {
+    maindevice: &'a MainDevice<'a>,
+    state: &'b mut PrepResetDevices,
+}
+
+impl <'a, 'b> ResetDevices<'a, 'b> {
+///TODO: docs
+    pub fn iter(maindevice: &'a MainDevice<'a>, state: &'b mut PrepResetDevices) -> Option<<Self as Iterator>::Item> {
+        let mut this = Self {
+            maindevice,
+            state
+        };
+        this.next()
+    }
+}
+
+impl <'a> Iterator for ResetDevices<'a, '_> {
+    type Item = Result<Option<(SendableFrame<'a>, PduResponseHandle)>, Error>;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.state {
+            PrepResetDevices::AlControl => {
+                let cmd = Command::bwr(RegisterAddress::AlControl.into());
+                let cmd = self.maindevice.prep_send_frame(cmd.into(), AlControl::reset(), cmd.len_override);
+                *self.state = PrepResetDevices::Fmmus(0);
+                return Some(cmd);
+            }
+            PrepResetDevices::Fmmus(idx) => {
+                let cmd = self.maindevice.prep_blank_memory::<{ Fmmu::PACKED_LEN }>(RegisterAddress::fmmu(*idx));
+
+                if *idx == 15 {
+                    *self.state = PrepResetDevices::SyncManagers(0);
+                } else {
+                    *idx += 1;
+                }
+                return Some(cmd);
+            }
+            PrepResetDevices::SyncManagers(idx) => {
+                let cmd = self.maindevice.prep_blank_memory::<{ SyncManager::PACKED_LEN }>(RegisterAddress::sync_manager(*idx));
+
+                if *idx == 15 {
+                    *self.state = PrepResetDevices::Dc(0);
+                } else {
+                    *idx += 1;
+                }
+                return Some(cmd);
+            }
+            PrepResetDevices::Dc(idx) => {
+                let cmd = match *idx {
+                    0 => self.maindevice.prep_blank_memory::<{ size_of::<u8>() }>(RegisterAddress::DcCyclicUnitControl),
+                    1 => self.maindevice.prep_blank_memory::<{ size_of::<u64>() }>(RegisterAddress::DcSystemTime),
+                    2 => self.maindevice.prep_blank_memory::<{ size_of::<u64>() }>(RegisterAddress::DcSystemTimeOffset),
+                    3 => self.maindevice.prep_blank_memory::<{ size_of::<u32>() }>(RegisterAddress::DcSystemTimeTransmissionDelay),
+                    4 => self.maindevice.prep_blank_memory::<{ size_of::<u32>() }>(RegisterAddress::DcSystemTimeDifference),
+                    5 => self.maindevice.prep_blank_memory::<{ size_of::<u8>() }>(RegisterAddress::DcSyncActive),
+                    6 => self.maindevice.prep_blank_memory::<{ size_of::<u32>() }>(RegisterAddress::DcSyncStartTime),
+                    7 => self.maindevice.prep_blank_memory::<{ size_of::<u32>() }>(RegisterAddress::DcSync0CycleTime),
+                    8 => self.maindevice.prep_blank_memory::<{ size_of::<u32>() }>(RegisterAddress::DcSync1CycleTime),
+                    9 => {
+                        let cmd = Command::bwr(RegisterAddress::DcControlLoopParam3.into());
+                        self.maindevice.prep_send_frame(cmd.into(), 0x0c00u16, cmd.len_override)
+                    }
+                    10 => {
+                        let cmd = Command::bwr(RegisterAddress::DcControlLoopParam1.into());
+                        self.maindevice.prep_send_frame(cmd.into(), 0x1000u16, cmd.len_override)
+                    }
+                    _ => return None,
+                };
+                *idx += 1;
+                return Some(cmd);
+            }
+        }
+    }
+}
+
+///TODO: docs
+pub struct PrepConfigureDevices {
+    iter: std::ops::Range<u16>,
+}
+
+impl PrepConfigureDevices {
+///TODO: docs
+    pub fn new(count: u16) -> Self {
+        Self {
+            iter: 0..count,
+        }
+    }
+}
+
+///TODO: docs
+pub struct ConfigureDevices<'a, 'b> {
+    maindevice: &'a MainDevice<'a>,
+    state: &'b mut PrepConfigureDevices,
+}
+
+impl <'a, 'b> ConfigureDevices<'a, 'b> {
+///TODO: docs
+    pub fn iter(
+    maindevice: &'a MainDevice<'a>,
+    state: &'b mut PrepConfigureDevices,
+        ) -> Option<<Self as Iterator>::Item> {
+        let mut this = Self {
+            maindevice,
+            state,
+        };
+        this.next()
+    }
+}
+
+impl <'a> Iterator for ConfigureDevices<'a, '_> {
+    type Item = (Result<Option<(SendableFrame<'a>, PduResponseHandle)>, Error>, u16, u16);
+    fn next(&mut self) -> Option<Self::Item> {
+        let idx = self.state.iter.next()?;
+
+        let configured_addr = BASE_SUBDEVICE_ADDRESS.wrapping_add(idx);
+        let cmd = Command::apwr(idx, RegisterAddress::ConfiguredStationAddress.into());
+
+        Some((self.maindevice.prep_send_frame(cmd.into(), configured_addr, cmd.len_override), idx, configured_addr))
+    }
+}
+
+#[derive(Clone, Copy)]
+///TODO: docs
+pub struct PrepDeviceProperties {
+    addr: u16,
+    finished: bool,
+    state: DevicePropertiesState,
+}
+
+impl PrepDeviceProperties {
+///TODO: docs
+    pub fn new(configured_addr: u16) -> Self {
+        Self {
+            addr: configured_addr,
+            finished: false,
+            state: DevicePropertiesState::default(),
+        }
+    }
+}
+
+#[derive(Default, Clone, Copy)]
+enum DevicePropertiesState {
+    #[default]
+    Flags,
+    Alias,
+    Ports,
+}
+
+///TODO: docs
+pub struct DeviceProperties<'a, 'b> {
+    maindevice: &'a MainDevice<'a>,
+    state: &'b mut PrepDeviceProperties,
+}
+
+impl <'a, 'b> DeviceProperties<'a, 'b> {
+///TODO: docs
+    pub fn iter(
+        maindevice: &'a MainDevice<'a>,
+        state: &'b mut PrepDeviceProperties,
+        ) -> Option<<Self as Iterator>::Item> {
+        let mut this = Self {
+            maindevice,
+            state,
+        };
+        this.next()
+    }
+}
+
+impl <'a> Iterator for DeviceProperties<'a, '_> {
+    type Item = Result<Option<(SendableFrame<'a>, PduResponseHandle)>, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.state.finished {
+            return None;
+        }
+
+        let cmd = match self.state.state {
+            DevicePropertiesState::Flags => {
+                self.state.state = DevicePropertiesState::Alias;
+                Command::fprd(self.state.addr, RegisterAddress::SupportFlags.into()).prep_sized::<crate::SupportFlags>(self.maindevice)
+            }
+            DevicePropertiesState::Alias => {
+                self.state.state = DevicePropertiesState::Ports;
+                Command::fprd(self.state.addr, RegisterAddress::ConfiguredStationAlias.into()).prep_sized::<u16>(self.maindevice)
+            }
+            DevicePropertiesState::Ports => {
+                self.state.finished = true;
+                Command::fprd(self.state.addr, RegisterAddress::DlStatus.into()).prep_sized::<crate::dl_status::DlStatus>(self.maindevice)
+            }
+        };
+
+        Some(cmd)
     }
 }
