@@ -536,7 +536,6 @@ impl<'sto> MainDevice<'sto> {
 
         let data = frame.inner.pdu_buf();
         let data = &data[..frame.inner.pdu_payload_len()];
-        println!("sending frame data: {:02x?}, header info: dst {}, src {}", data, frame.inner.ethernet_frame().dst_addr(), frame.inner.ethernet_frame().src_addr());
 
         frame.inner.set_state(crate::pdu_loop::frame_element::FrameState::Sendable);
 
@@ -670,13 +669,6 @@ impl<'sto> MainDevice<'sto> {
             },
         };
 
-        //TODO: remove the 3 lines below this
-        //use ethercrab_wire::EtherCrabWireWriteSized;
-        //let a = config.pack();
-        //println!("cfg bytes {:?} to idx {sm_idx} on {configured_addr}\n\n", a.as_ref(), );
-        
-
-
         let cmd = Command::fpwr(configured_addr, RegisterAddress::sync_manager(sm_idx).into());
 
 
@@ -700,7 +692,6 @@ impl<'sto> MainDevice<'sto> {
     /// preps writing to an arbitrary addr
     pub unsafe fn prep_write(&self, configured_addr: u16, write_addr: u16, write_len: u16, data: impl EtherCrabWireWrite) -> Result<Option<(SendableFrame, PduResponseHandle)>, Error> {
         let cmd = Command::fpwr(configured_addr, write_addr);
-        //println!("write len: {write_len}");
         self.prep_send_frame(cmd.into(), data, Some(write_len))
     }
 
